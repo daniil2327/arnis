@@ -5,93 +5,68 @@ import numpy as np
 from .bresenham import bresenham
 from .floodFill import floodFill
 
-
-def processData(data, args):
+def parseData(data, args):
     print("Parsing data...")
     resDownScaler = 100
     processingStartTime = time()
 
     greatestElementX = 0
     greatestElementY = 0
+
+    nodesDict = {}
+
     for element in data["elements"]:
         if element["type"] == "node":
             element["lat"] = int(str(element["lat"]).replace(".", ""))
             element["lon"] = int(str(element["lon"]).replace(".", ""))
 
-            if element["lat"] > greatestElementX:
-                greatestElementX = element["lat"]
-            if element["lon"] > greatestElementY:
-                greatestElementY = element["lon"]
+            greatestElementX = max(greatestElementX, element["lat"])
+            greatestElementY = max(greatestElementY, element["lon"])
 
-    for element in data["elements"]:
-        if element["type"] == "node":
-            if len(str(element["lat"])) != len(str(greatestElementX)):
-                for i in range(
-                    0, len(str(greatestElementX)) - len(str(element["lat"]))
-                ):
-                    element["lat"] *= 10
+            digit_diff_x = len(str(greatestElementX)) - len(str(element["lat"]))
+            digit_diff_y = len(str(greatestElementY)) - len(str(element["lon"]))
 
-            if len(str(element["lon"])) != len(str(greatestElementY)):
-                for i in range(
-                    0, len(str(greatestElementY)) - len(str(element["lon"]))
-                ):
-                    element["lon"] *= 10
+            element["lat"] *= 10 ** digit_diff_x
+            element["lon"] *= 10 ** digit_diff_y
+
+            nodesDict[element["id"]] = [element["lat"], element["lon"]]
 
     lowestElementX = greatestElementX
     lowestElementY = greatestElementY
-    for element in data["elements"]:
-        if element["type"] == "node":
-            if element["lat"] < lowestElementX:
-                lowestElementX = element["lat"]
-            if element["lon"] < lowestElementY:
-                lowestElementY = element["lon"]
+    for nodeId in nodesDict:
+        if nodesDict[nodeId][0] < lowestElementX:
+            lowestElementX = nodesDict[nodeId][0]
+        if nodesDict[nodeId][1] < lowestElementY:
+            lowestElementY = nodesDict[nodeId][1]
 
-    nodesDict = {}
     for element in data["elements"]:
         if element["type"] == "node":
             element["lat"] -= lowestElementX
             element["lon"] -= lowestElementY
-            nodesDict[element["id"]] = [element["lat"], element["lon"]]
 
-    orig_posDeterminationCoordX = 0
-    orig_posDeterminationCoordY = 0
-    map_posDeterminationCoordX = 0
-    map_posDeterminationCoordY = 0
     maxBuilding = (0, 0)
-    minBuilding = (greatestElementX, greatestElementY)
+    minBuilding = (float('inf'), float('inf'))
     nodeIndexList = []
+
     for i, element in enumerate(data["elements"]):
         if element["type"] == "way":
             for j, node in enumerate(element["nodes"]):
                 element["nodes"][j] = nodesDict[node]
 
             if "tags" in element and "building" in element["tags"]:
-                if orig_posDeterminationCoordX == 0:
-                    orig_posDeterminationCoordX = element["nodes"][0][0]
-                    orig_posDeterminationCoordY = element["nodes"][0][1]
-                    map_posDeterminationCoordX = round(
-                        element["nodes"][0][0] / resDownScaler
-                    )
-                    map_posDeterminationCoordY = round(
-                        element["nodes"][0][1] / resDownScaler
-                    )
-
                 for coordinate in element["nodes"]:
                     cordX = round(coordinate[0] / resDownScaler)
                     cordY = round(coordinate[1] / resDownScaler)
 
-                    if cordX > maxBuilding[0]:
-                        maxBuilding = (cordX, maxBuilding[1])
-                    elif cordX < minBuilding[0]:
-                        minBuilding = (cordX, minBuilding[1])
-
-                    if cordY > maxBuilding[1]:
-                        maxBuilding = (maxBuilding[0], cordY)
-                    elif cordY < minBuilding[1]:
-                        minBuilding = (minBuilding[0], cordY)
+                    maxBuilding = (max(cordX, maxBuilding[0]), max(cordY, maxBuilding[1]))
+                    minBuilding = (min(cordX, minBuilding[0]), min(cordY, minBuilding[1]))
 
         elif element["type"] == "node":
             nodeIndexList.append(i)
+
+    (orig_posDeterminationCoordX, orig_posDeterminationCoordY) = (minBuilding[0], minBuilding[1])
+    (map_posDeterminationCoordX, map_posDeterminationCoordY) = (round(orig_posDeterminationCoordX / resDownScaler), round(orig_posDeterminationCoordY / resDownScaler))
+
 
     for i in reversed(nodeIndexList):
         del data["elements"][i]
@@ -159,6 +134,10 @@ def processData(data, args):
     img.fill(0)
     imgLanduse = img.copy()
 
+    return processData(minMaxDistX, minMaxDistY, data, img, imgLanduse, processingStartTime, args.debug)
+
+
+def processData(minMaxDistX, minMaxDistY, data, img, imgLanduse, processingStartTime, debug):
     print("Processing data...")
 
     ElementIncr = 0
@@ -411,27 +390,15 @@ def processData(data, args):
                     previousElement = (coordinate[0], coordinate[1])
 
                 if cornerAddup != (0, 0, 0):
-                    if naturalType != 32:
-                        imgLanduse = floodFill(
-                            imgLanduse,
-                            round(cornerAddup[1] / cornerAddup[2]),
-                            round(cornerAddup[0] / cornerAddup[2]),
-                            naturalType,
-                            currentNatural,
-                            minMaxDistX,
-                            minMaxDistY,
-                        )
-                    else:
-                        imgLanduse = floodFill(
-                            imgLanduse,
-                            round(cornerAddup[1] / cornerAddup[2]),
-                            round(cornerAddup[0] / cornerAddup[2]),
-                            naturalType,
-                            currentNatural,
-                            minMaxDistX,
-                            minMaxDistY,
-                            elementType="tree_row",
-                        )
+                    imgLanduse = floodFill(
+                        imgLanduse,
+                        round(cornerAddup[1] / cornerAddup[2]),
+                        round(cornerAddup[0] / cornerAddup[2]),
+                        naturalType,
+                        currentNatural,
+                        minMaxDistX,
+                        minMaxDistY,
+                    )
 
             elif "leisure" in element["tags"]:
                 previousElement = (0, 0)
@@ -445,14 +412,17 @@ def processData(data, args):
                     ):
                         if (
                             element["tags"]["leisure"] == "park"
-                            or element["tags"]["leisure"] == "playground"
                             or element["tags"]["leisure"] == "garden"
                         ):
                             leisureType = 30
+                        elif element["tags"]["leisure"] == "playground":
+                            leisureType = 34
                         elif element["tags"]["leisure"] == "pitch":
                             leisureType = 36
                         elif element["tags"]["leisure"] == "swimming_pool":
                             leisureType = 37
+                        elif element["tags"]["leisure"] == "nature_reserve":
+                            leisureType = 32
 
                         for i in bresenham(
                             coordinate[0],
@@ -650,6 +620,6 @@ def processData(data, args):
         f"Processing finished in {(time() - processingStartTime):.2f} seconds"
         + f"({((time() - processingStartTime) / 60):.2f} minutes)"
     )
-    if args.debug:
+    if debug:
         imwrite("arnis-debug-map.png", img)
     return np.flip(img, axis=1)
