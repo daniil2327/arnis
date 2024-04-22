@@ -7,35 +7,32 @@ from polylabel import polylabel
 def floodFill(
     img, px, py, newColor, currentBuilding, minMaxDistX, minMaxDistY, elementType="None"
 ):
-    startTimeFloodfill = time()
     currentBuilding = np.delete(currentBuilding, 0, axis=0)
     if len(currentBuilding) <= 2 or not (px < minMaxDistY and py < minMaxDistX):
         return img
-    if not (mplPath.Path(currentBuilding).contains_point((py, px))):
-        centroid = polylabel([currentBuilding.tolist()], with_distance=True)
-        px = round(centroid[0][1])
-        py = round(centroid[0][0])
-        if not (mplPath.Path(currentBuilding).contains_point((py, px))):
-            if mplPath.Path(currentBuilding).contains_point((py - 5, px)):
-                py -= 5
-            elif mplPath.Path(currentBuilding).contains_point((py + 5, px)):
-                py += 5
-            elif mplPath.Path(currentBuilding).contains_point((py, px - 5)):
-                px -= 5
-            elif mplPath.Path(currentBuilding).contains_point((py, px + 5)):
-                px += 5
-            else:
-                return img
 
-    if str(img[px][py][0])[:1] == "5" or str(img[px][py][0])[:1] == "6":
-        if mplPath.Path(currentBuilding).contains_point((py - 1, px)):
-            py -= 1
-        elif mplPath.Path(currentBuilding).contains_point((py + 1, px)):
-            py += 1
-        elif mplPath.Path(currentBuilding).contains_point((py, px - 1)):
-            px -= 1
-        elif mplPath.Path(currentBuilding).contains_point((py, px + 1)):
-            px += 1
+    building_path = mplPath.Path(currentBuilding)
+
+    centroid = polylabel([currentBuilding.tolist()], with_distance=True)
+    px = round(centroid[0][1])
+    py = round(centroid[0][0])
+    if not building_path.contains_point((py, px)):
+        offset = [(0, 5), (0, -5), (5, 0), (-5, 0)]
+        for dx, dy in offset:
+            if building_path.contains_point((py + dy, px + dx)):
+                px += dx
+                py += dy
+                break
+        else:
+            return img
+
+    if str(img[px][py][0])[:1] in ["5", "6"]:
+        offset = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        for dx, dy in offset:
+            if building_path.contains_point((py + dy, px + dx)):
+                px += dx
+                py += dy
+                break
         else:
             return img
 
@@ -43,66 +40,29 @@ def floodFill(
         oldColor = img[px][py][0]
     except Exception:
         return img
-    queue = [(px, py)]
+
+    queue = set([(px, py)])
     seen = set()
-    tot_rows = img.shape[0]
-    tot_cols = img.shape[1]
-    queueLen = 0
+    tot_rows, tot_cols = img.shape[:2]
+
     while queue:
-        nxt = []
-        for x, y in queue:
-            if img[x][y] == newColor:
-                continue
-            if not (mplPath.Path(currentBuilding).contains_point((y, x))):
-                return img
-            img[x][y] = newColor
-            seen.add((x, y))
+        x, y = queue.pop()
+        if img[x][y] == newColor:
+            continue
+        if not building_path.contains_point((y, x)):
+            return img
+        img[x][y] = newColor
+        seen.add((x, y))
 
-            if (
-                x
-                and (x - 1, y) not in seen
-                and (
-                    img[x - 1][y] == oldColor
-                    or (elementType == "building" and str(img[x - 1][y][0])[:1] == "1")
-                )
-            ):
-                nxt.append((x - 1, y))
-            if (
-                y
-                and (x, y - 1) not in seen
-                and (
-                    img[x][y - 1] == oldColor
-                    or (elementType == "building" and str(img[x][y - 1][0])[:1] == "1")
-                )
-            ):
-                nxt.append((x, y - 1))
-            if (
-                x < tot_rows - 1
-                and (x + 1, y) not in seen
-                and (
-                    img[x + 1][y] == oldColor
-                    or (elementType == "building" and str(img[x + 1][y][0])[:1] == "1")
-                )
-            ):
-                nxt.append((x + 1, y))
-            if (
-                y < tot_cols - 1
-                and (x, y + 1) not in seen
-                and (
-                    img[x][y + 1] == oldColor
-                    or (elementType == "building" and str(img[x][y + 1][0])[:1] == "1")
-                )
-            ):
-                nxt.append((x, y + 1))
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < tot_rows and 0 <= ny < tot_cols and (nx, ny) not in seen:
+                if (
+                    img[nx][ny] == oldColor
+                    or (elementType == "building" and img[nx][ny][0] // 10 == 1)
+                ):
+                    queue.add((nx, ny))
 
-            # Timeout (known issue, see Github readme)
-            if time() - startTimeFloodfill > 7 or (
-                elementType == "tree_row" and time() - startTimeFloodfill > 0.2
-            ):
-                return img
-
-        queue = nxt
-        if len(nxt) > queueLen:
-            queueLen = len(nxt)
+        # Timeout нахуй
 
     return img
