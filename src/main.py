@@ -15,7 +15,7 @@ from math import floor
 import numpy as np
 
 from .getData import getData
-from .processData import processData
+from .processData import parseData
 
 parser = argparse.ArgumentParser(
     description="Arnis - Generate cities from real life in Minecraft using Python"
@@ -23,6 +23,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--city", dest="city", help="Name of the city")
 parser.add_argument("--state", dest="state", help="Name of the state")
 parser.add_argument("--country", dest="country", help="Name of the country")
+parser.add_argument("--bbox", dest="bbox", help="Bounding box of the city")
+parser.add_argument("--file", dest="file", help="JSON file containing OSM data")
 parser.add_argument("--path", dest="path", help="Path to the minecraft world")
 parser.add_argument(
     "--debug",
@@ -33,8 +35,9 @@ parser.add_argument(
 )
 args = parser.parse_args()
 if args.city is None or args.state is None or args.country is None or args.path is None:
-    print("Error! Missing arguments")
-    os._exit(1)
+    if args.bbox is None and args.file is None:
+        print("Error! Missing arguments")
+        os._exit(1)
 
 gc.collect()
 np.seterr(all="raise")
@@ -42,8 +45,11 @@ np.set_printoptions(threshold=sys.maxsize)
 
 processStartTime = time.time()
 air = anvil.Block("minecraft", "air")
+brick = anvil.Block("minecraft", "bricks")
 stone = anvil.Block("minecraft", "stone")
 grass_block = anvil.Block("minecraft", "grass_block")
+spruce_log = anvil.Block("minecraft", "spruce_log")
+birch_leaves = anvil.Block("minecraft", "birch_leaves")
 dirt = anvil.Block("minecraft", "dirt")
 sand = anvil.Block("minecraft", "sand")
 podzol = anvil.Block.from_numeric_id(3, 2)
@@ -55,8 +61,9 @@ carrots = anvil.Block("minecraft", "carrots")
 potatoes = anvil.Block("minecraft", "potatoes")
 cobblestone = anvil.Block("minecraft", "cobblestone")
 iron_block = anvil.Block("minecraft", "iron_block")
-log = anvil.Block.from_numeric_id(17)
-leaves = anvil.Block.from_numeric_id(18)
+oak_log = anvil.Block.from_numeric_id(17)
+oak_leaves = anvil.Block.from_numeric_id(18)
+birch_log = anvil.Block("minecraft", "birch_log")
 white_stained_glass = anvil.Block("minecraft", "white_stained_glass")
 dark_oak_door_lower = anvil.Block(
     "minecraft", "dark_oak_door", properties={"half": "lower"}
@@ -66,7 +73,12 @@ dark_oak_door_upper = anvil.Block(
 )
 cobblestone_wall = anvil.Block("minecraft", "cobblestone_wall")
 stone_brick_slab = anvil.Block.from_numeric_id(44, 5)
+
 red_flower = anvil.Block.from_numeric_id(38)
+yellow_flower = anvil.Block("minecraft","dandelion")
+blue_flower = anvil.Block("minecraft", "blue_orchid")
+white_flower = anvil.Block("minecraft", "azure_bluet")
+
 white_concrete = anvil.Block("minecraft", "white_concrete")
 black_concrete = anvil.Block("minecraft", "black_concrete")
 gray_concrete = anvil.Block("minecraft", "gray_concrete")
@@ -114,19 +126,19 @@ def saveRegion(region="all"):
         print(f"Saved {region}")
 
 
+from .tree import createTree
 def run():
     if not (os.path.exists(mcWorldPath + "/region")):
         print("Error! No Minecraft world found at given path")
         os._exit(1)
 
-    rawdata = getData(args.city, args.state, args.country, args.debug)
-    imgarray = processData(rawdata, args)
+    rawdata = getData(args.city, args.state, args.country, args.bbox, args.file, args.debug)
+    imgarray = parseData(rawdata, args)
 
     print("Generating minecraft world...")
 
     x = 0
     z = 0
-    doorIncrement = 0
     ElementIncr = 0
     ElementsLen = len(imgarray)
     lastProgressPercentage = 0
@@ -143,7 +155,7 @@ def run():
         for j in i:
             setBlock(dirt, x, 0, z)
             if j == 0:  # Ground
-                setBlock(light_gray_concrete, x, 1, z)
+                setBlock(grass_block, x, 1, z)
             elif j == 10:  # Street
                 setBlock(black_concrete, x, 1, z)
                 setBlock(air, x, 2, z)
@@ -192,21 +204,22 @@ def run():
                         setBlock(potatoes, x, 2, z)
             elif j == 32:  # Forest
                 setBlock(grass_block, x, 1, z)
-                randomChoice = randint(0, 8)
-                if randomChoice >= 0 and randomChoice <= 5:
+                randomChoice = randint(0, 20)
+                randomTree = randint(1, 3)
+                randomFlower = randint(1, 4)
+                if randomChoice == 20:
+                    createTree(x, z, randomTree)
+                elif randomChoice == 2:
+                    if randomFlower == 1:
+                        setBlock(red_flower, x, 2, z)
+                    elif randomFlower == 2:
+                        setBlock(blue_flower, x, 2, z)
+                    elif randomFlower == 3:
+                        setBlock(yellow_flower, x, 2, z)
+                    else:
+                        setBlock(white_flower, x, 2, z)
+                elif randomChoice == 0 or randomChoice == 1:
                     setBlock(grass, x, 2, z)
-                elif randomChoice == 6:
-                    fillBlocks(log, x, 2, z, x, 8, z)
-                    fillBlocks(leaves, x - 2, 5, z - 2, x + 2, 6, z + 2)
-                    setBlock(air, x - 2, 6, z - 2)
-                    setBlock(air, x - 2, 6, z + 2)
-                    setBlock(air, x + 2, 6, z - 2)
-                    setBlock(air, x + 2, 6, z + 2)
-                    fillBlocks(leaves, x - 1, 7, z - 1, x + 1, 8, z + 1)
-                    setBlock(air, x - 1, 8, z - 1)
-                    setBlock(air, x - 1, 8, z + 1)
-                    setBlock(air, x + 1, 8, z - 1)
-                    setBlock(air, x + 1, 8, z + 1)
             elif j == 33:  # Cemetery
                 setBlock(podzol, x, 1, z)
                 randomChoice = randint(0, 100)
@@ -239,85 +252,13 @@ def run():
                 setBlock(water, x, 1, z)
             elif j == 39:  # Raw grass
                 setBlock(grass_block, x, 1, z)
+
             elif j >= 50 and j <= 59:  # House corner
-                building_height = 5
-                if j == 51:
-                    building_height = 8
-                elif j == 52:
-                    building_height = 11
-                elif j == 53:
-                    building_height = 14
-                elif j == 54:
-                    building_height = 17
-                elif j == 55:
-                    building_height = 20
-                elif j == 56:
-                    building_height = 23
-                elif j == 57:
-                    building_height = 26
-                elif j == 58:
-                    building_height = 29
-                elif j == 59:
-                    building_height = 32
-
-                fillBlocks(white_concrete, x, 1, z, x, building_height, z)
+                fillBlocks(white_concrete, x, 1, z, x, 3, z)
             elif j >= 60 and j <= 69:  # House wall
-                building_height = 4
-                if j == 61:
-                    building_height = 7
-                elif j == 62:
-                    building_height = 10
-                elif j == 63:
-                    building_height = 13
-                elif j == 64:
-                    building_height = 16
-                elif j == 65:
-                    building_height = 19
-                elif j == 66:
-                    building_height = 22
-                elif j == 67:
-                    building_height = 25
-                elif j == 68:
-                    building_height = 28
-                elif j == 69:
-                    building_height = 31
-
-                if doorIncrement == 25:
-                    fillBlocks(white_stained_glass, x, 4, z, x, building_height, z)
-                    setBlock(white_concrete, x, 1, z)
-                    setBlock(dark_oak_door_lower, x, 2, z)
-                    setBlock(dark_oak_door_upper, x, 3, z)
-                    doorIncrement = 0
-                else:
-                    fillBlocks(white_concrete, x, 1, z, x, 2, z)
-                    fillBlocks(white_stained_glass, x, 3, z, x, building_height, z)
-                doorIncrement += 1
-                setBlock(white_concrete, x, building_height + 1, z)
+                fillBlocks(white_concrete, x, 1, z, x, 3, z)
             elif j >= 70 and j <= 79:  # House interior
-                if j >= 70:
-                    setBlock(white_concrete, x, 5, z)
-                    if j >= 71:
-                        setBlock(white_concrete, x, 8, z)
-                        if j >= 72:
-                            setBlock(white_concrete, x, 11, z)
-                            if j >= 73:
-                                setBlock(white_concrete, x, 14, z)
-                                if j >= 74:
-                                    setBlock(white_concrete, x, 17, z)
-                                    if j >= 75:
-                                        setBlock(white_concrete, x, 20, z)
-                                        if j >= 76:
-                                            setBlock(white_concrete, x, 23, z)
-                                            if j >= 77:
-                                                setBlock(white_concrete, x, 26, z)
-                                                if j >= 78:
-                                                    setBlock(white_concrete, x, 29, z)
-                                                    if j >= 78:
-                                                        setBlock(
-                                                            white_concrete, x, 32, z
-                                                        )
-
-                setBlock(glowstone, x, 1, z)
+                setBlock(white_concrete, x, 1, z)
 
             z += 1
         x += 1
